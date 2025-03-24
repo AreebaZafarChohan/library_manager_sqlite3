@@ -2,6 +2,7 @@ import sqlite3
 import streamlit as st
 import pandas as pd
 import time
+import matplotlib.pyplot as plt
 
 # 📌 Database Connection Function
 def connect_db():
@@ -272,35 +273,75 @@ elif option == "Update Book":
 
 elif option == "View Books":        
     st.header("📖 View Books")
-    selected_genre = st.selectbox("Filter by Genre", list(genre_options.values()))
+    selected_genre = st.selectbox("Filter by Genre", ["All"] + list(genre_options.values()))
     genre_id = next((id_ for id_, name in genre_options.items() if name == selected_genre), None)
-    
-    books = fetch_books_by_genre(genre_id if genre_id != 0 else None)
+
+    books = fetch_books_by_genre(genre_id if genre_id else None)
     
     if books:
-        for book in books:
-            st.subheader(f"📕 {book[1]} by {book[2]}")
-            st.write(f"- **Year:** {book[3]}")
-            st.write(f"- **Genre:** {book[4]}")
-            st.write(f"- **Read Status:** {'✅ Read' if book[5] else '❌ Not Read'}")
-            st.write(f"- **Rating:** {book[6]}/5")
-            col1, col2 = st.columns(2)
-            with col1:
-                if book[7]:
-                    st.markdown(f"[📖 Read Online]({book[7]})")
-            with col2:
-                if book[8]:
-                    st.markdown(f"[📥 Download]({book[8]})")
+        df = pd.DataFrame(books, columns=["ID", "Title", "Author", "Year", "Genre", "Read Status", "Rating", "Read Link", "Download Link"])
+        df["Read Status"] = df["Read Status"].apply(lambda x: "✅ Read" if x else "❌ Not Read")
+        st.dataframe(df.drop(columns=["ID"]))  # Hide ID for cleaner view
     else:
         st.warning("No books available.")
 
 elif option == "Book Statistics":
     st.header("📊 Book Statistics")
     total_books, read_books, avg_rating, most_popular_genre = get_book_statistics()
-    st.write(f"- Total Books: {total_books}")
-    st.write(f"- Read Books: {read_books}")
-    st.write(f"- Average Rating: {avg_rating:.2f}")
-    st.write(f"- Most Popular Genre: {most_popular_genre}")
+    
+    # 📌 Display text stats
+    st.write(f"- **Total Books:** {total_books}")
+    st.write(f"- **Read Books:** {read_books}")
+    st.write(f"- **Average Rating:** {avg_rating:.2f}")
+    st.write(f"- **Most Popular Genre:** {most_popular_genre}")
+
+    # 📊 Graph 1: Read vs. Unread Books
+    labels = ["Read", "Unread"]
+    sizes = [read_books, total_books - read_books]
+    colors = ["#66c2a5", "#fc8d62"]
+
+    fig1, ax1 = plt.subplots()
+    ax1.pie(sizes, labels=labels, autopct="%1.1f%%", colors=colors, startangle=90)
+    ax1.axis("equal")  # Equal aspect ratio ensures that pie is drawn as a circle
+    st.pyplot(fig1)
+
+    # 📊 Graph 2: Books per Genre
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT genres.name, COUNT(*) FROM books JOIN genres ON books.genre_id = genres.id GROUP BY books.genre_id")
+    genre_data = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    if genre_data:
+        genres, book_counts = zip(*genre_data)
+        fig2, ax2 = plt.subplots()
+        ax2.bar(genres, book_counts, color="#1f77b4")
+        ax2.set_xlabel("Genres")
+        ax2.set_ylabel("Number of Books")
+        ax2.set_title("Books per Genre")
+        plt.xticks(rotation=45)
+        st.pyplot(fig2)
+    else:
+        st.warning("No books available for genre analysis.")
+
+    # 📊 Graph 3: Ratings Distribution
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT rating FROM books WHERE rating IS NOT NULL")
+    ratings = [row[0] for row in cursor.fetchall()]
+    cursor.close()
+    conn.close()
+
+    if ratings:
+        fig3, ax3 = plt.subplots()
+        ax3.hist(ratings, bins=[0, 1, 2, 3, 4, 5], color="#2ca02c", edgecolor="black")
+        ax3.set_xlabel("Ratings")
+        ax3.set_ylabel("Count")
+        ax3.set_title("Book Ratings Distribution")
+        st.pyplot(fig3)
+    else:
+        st.warning("No rating data available.")
 
 elif option == "Guidelines":
     st.header("📜 Guidelines")
